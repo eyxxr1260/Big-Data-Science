@@ -1,0 +1,80 @@
+import requests
+import csv
+from bs4 import BeautifulSoup 
+from selenium import webdriver
+from selenium.webdriver.common.by import By
+from selenium.webdriver.chrome.service import Service
+from webdriver_manager.chrome import ChromeDriverManager
+from selenium.webdriver.support.ui import WebDriverWait
+from selenium.common.exceptions import TimeoutException
+from selenium.webdriver.support import expected_conditions as EC
+import time
+from selenium.webdriver.chrome.options import Options
+options=Options()
+options.add_argument("--headless")
+
+theFile="covid19.csv"
+url="https://covid-19.nchc.org.tw/city_confirmed.php?mycity=%E5%85%A8%E9%83%A8%E7%B8%A3%E5%B8%82"
+county_city=[]
+with open(theFile,'w+') as fp:
+    import pandas as pd
+    df=pd.DataFrame()
+    df=pd.date_range('20200122','20230314')
+    for the_date in df.date:
+        print(str(the_date))
+        driver = webdriver.Chrome(service=Service(ChromeDriverManager().install()),options=options)
+        driver.implicitly_wait(10)
+        
+        driver.get(url)
+        now_page_src = driver.page_source
+        now_soup=BeautifulSoup(now_page_src,"lxml")
+        
+        if(len(county_city)==0):#第一列尚未輸出城市
+            specific_div=now_soup.select("body>div:nth-child(3)>div>div:nth-child(2)")
+            for each_item in specific_div:
+                for each_item2 in each_item.find_all("a"):
+                    if(each_item2.text=="全部縣市"):
+                        county_city.append("日期")
+                    else: 
+                        county_city.append(each_item2.text)                        
+            fp.write(str(",".join(county_city)+"\n"))
+            
+            
+        element1=driver.find_element(By.XPATH,"//*[@id='myTable03_wrapper']/div[4]/div[3]/div/table/tfoot/tr/th[1]/input")#輸入日期
+        element1.click()
+        element1.send_keys(str(the_date))
+
+
+        element2=driver.find_element(By.XPATH,"//*[@id='myTable03_wrapper']/div[4]/div[3]/div/table/tfoot/tr/th[3]/input")#輸入"全區"至區域欄位
+        element2.click()
+        element2.send_keys('全區')
+        time.sleep(1)
+        delay=2
+        try:
+            myElement=EC.presence_of_element_located((By.XPATH,"//*[@id='myTable03_wrapper']/div[4]/div[2]/table/tbody"))
+            WebDriverWait((driver), delay).until(myElement)
+            print("Success")#載入成功
+            soup=BeautifulSoup(driver.page_source,"lxml")
+        except TimeoutException():
+            print("Time out")
+        
+        driver.quit()
+        
+        target_table=soup.find(attrs={"aria-describedby":"myTable03_info"})
+        
+        tbody = target_table.find("tbody")
+        if len(tbody.findAll("tr")) == 1 and tbody.findAll("tr")[0].text == "No matching records found":
+            continue#不輸出+0資料
+        else:
+            tmp_list=["0" for x in range(24)]
+            for each_region in target_table.find("tbody").findAll("tr"):
+                the_cols=each_region.findAll("td")
+                tmp_list[0]=the_cols[0].text
+                if(the_cols[0].text!=str(the_date)):
+                    continue
+                tmp_list[county_city.index(the_cols[1].text)]=the_cols[3].text.replace(",","")
+            #if(tmp_list[0]==str(the_date)):
+                #print(str(",".join(tmp_list))+"\n")
+            fp.write(str(",".join(tmp_list))+"\n")
+print("Completed")
+            
